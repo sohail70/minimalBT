@@ -77,11 +77,46 @@ class TreeNode{
         TreeNode(std::string name_):name(name_), semaphore(0){}
         ~TreeNode(){}
         
+        // Read the latest updated state
+        NodeState ReadState() 
+        {
+            return state;
+        }
+
+        // Write on the state
+        virtual void WriteState(NodeState newState) = 0;
+        
+
+        //! These two functions get and set node state are like producer and consumer so they notify each other back and forth
+        NodeState getNodeState()
+        {
+            std::unique_lock<std::mutex> lock(stateMutex);
+            stateCv.wait(lock,[&](){return stateUpdated;});
+            stateUpdated = false;
+            stateCv.notify_all(); //! notify_one is sufficient isn't it?
+            return state;
+        }
+
+
+        void setNodeState(NodeState newState)
+        {
+            std::unique_lock<std::mutex> lock(stateMutex);
+            state = newState;
+            stateUpdated = true;
+            stateCv.notify_all();
+            stateCv.wait(lock,[&](){return !stateUpdated;});   
+        }
+
+
+        virtual void Exec() = 0;
+        // virtual void Halt() = 0;
+
         std::string name; 
         NodeType type;
         NodeState state;
         std::thread thread;
         Semaphore semaphore;
+        bool stateUpdated;
     protected:
 
         std::mutex stateMutex;
@@ -111,6 +146,13 @@ class ControlNode: public TreeNode{
             childNodes.push_back(std::move(child));
             childStates.push_back(NodeState::IDLE); 
         }
+
+        void WriteState(NodeState newState)
+        {
+            std::lock_guard<std::mutex> lock(stateMutex);
+            state = newState;
+
+        }
     protected:
         std::vector<std::unique_ptr<TreeNode>> childNodes; //make this class the owner and responsible for deleting the childNodes after the objects lifetime
         std::vector<NodeState> childStates;
@@ -128,6 +170,13 @@ class ActionNode: public LeafNode{
             state = NodeState::IDLE;
         }
         ~ActionNode(){}
+
+        void WriteState(NodeState newState)
+        {
+            std::lock_guard<std::mutex> lock(stateMutex);
+            state = newState;
+
+        }
     protected:
 
 };  
@@ -153,25 +202,54 @@ class SequenceNode: public ControlNode
 
 
 // Tier 4 --> client code
-class ActionTest: public ActionNode
+class MoveTo: public ActionNode
 {
     public:
-        ActionTest(std::string name_): ActionNode(name_){}
-        ~ActionTest(){}
-    protected:
+        MoveTo(std::string name_,std::vector<int> pos_): ActionNode(name_){
+            pos = pos_;
+            thread = std::thread(&MoveTo::Exec , this);
+        }
+        ~MoveTo(){}
 
+        void Exec()
+        {
+            semaphore.wait();
+        }
+    protected:
+        std::vector<int> pos;
 };
 
+class PickUp: public ActionNode
+{
+    public:
+        PickUp(std::string name_ , std::string objectToPick_): ActionNode(name){
+            objectToPick = objectToPick_;
+            thread = std::thread(&PickUp::Exec , this);
+        }
 
+        void Exec()
+        {
+            semaphore.wait();
+        }
+    protected:
+        std::string objectToPick;
+};
 
 
 int main()
 {
     std::unique_ptr<SequenceNode> root = std::make_unique<SequenceNode>("Seq1");
-    std::unique_ptr<ActionTest> action1 = std::make_unique<ActionTest>("A1");
-    std::unique_ptr<ActionTest> action2 = std::make_unique<ActionTest>("A2");
+    std::unique_ptr<MoveTo> action1 = std::make_unique<MoveTo>("Move to position (1,2)",std::vector<int>(1,2));
+    std::unique_ptr<PickUp> action2 = std::make_unique<PickUp>("Pick up Orange","Orange");
 
     root->AddChild(std::move(action1));
     root->AddChild(std::move(action2));
 
+
+    while(true)
+    {
+        root->semaphore.notify();
+        root->getNodeState(); 
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
 }
