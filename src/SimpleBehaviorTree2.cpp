@@ -6,6 +6,7 @@
 #include<vector>
 #include<memory>
 #include<cmath>
+#include<string>
 // TODO: Implement halt 
 
 /* 
@@ -17,7 +18,7 @@
 class Semaphore{
     public:
         Semaphore(int count_):count(count_){}
-        ~Semaphore(){std::cout<<"Semaphore destructor \n";}
+        ~Semaphore(){}
 
         void notify()
         {
@@ -81,6 +82,9 @@ enum class NodeState{
     HALTED,
     EXIT
 };
+
+std::vector<std::string> node_state_text {"SUCCESS", "FAILURE" , "RUNNING" , "IDLE" , "HALTED" , "EXIT"};
+
 // Tier 1
 class TreeNode{
     public:
@@ -89,7 +93,7 @@ class TreeNode{
             state = NodeState::IDLE;
             stateUpdated = false;
         }
-        virtual ~TreeNode(){std::cout<<"TreeNode destructor \n";}
+        ~TreeNode(){}
         
         // Read the latest updated state
         NodeState ReadState() 
@@ -155,7 +159,7 @@ class ControlNode: public TreeNode{
         ControlNode(std::string name_):TreeNode(name_){
             type = NodeType::CONTROL;
         }
-        ~ControlNode(){std::cout<<"Control node destructor \n";}
+        ~ControlNode(){}
 
         void AddChild(TreeNode* child)
         {
@@ -185,7 +189,7 @@ class ActionNode: public LeafNode{
             type = NodeType::ACTION;
             state = NodeState::IDLE;
         }
-        ~ActionNode(){std::cout<<"ActionNode destructor \n";}
+        ~ActionNode(){}
 
         void WriteState(NodeState newState)
         {
@@ -205,7 +209,7 @@ class SequenceNode: public ControlNode
         {
             thread = std::thread(&SequenceNode::Exec , this);
         }
-        ~SequenceNode(){std::cout<<"Sequence node destructor\n";}
+        ~SequenceNode(){}
 
         void Exec()
         {
@@ -241,7 +245,8 @@ class SequenceNode: public ControlNode
                             }
                             else // Success or failure of the child node //! I'm not sure why we have to tick again the successful child 
                             {
-                                std::cout<<"Not sure about this part \n"; 
+                                // Whats the reason for this part? We are actually gonna signal the child that we (seq - as a father) got the success message from the child. And from the pov of the child(ActionTest)
+                                // we are actually gonna put semaphore.wait() and the end of the Exec function in actions test to imply that we are waiting for our father's acknowledgement to be sure out father saw our success  
                                 childNodes[i]->semaphore.notify();
                                 childStates[i] = ChildCurrentState;
                             }
@@ -332,6 +337,7 @@ class MoveTo: public ActionNode
                 std::cout<<"Reached The target"<<"\n";
                 // setNodeState(NodeState::SUCCESS); // If you put this instead of the next line your are gonna encounter a big halt at the end :) which is visible from the call stack inspection from the left bar
                 WriteState(NodeState::SUCCESS);
+                semaphore.wait(); // Waiting for our father to see our success so that we are sure that our father knows that we as an action did our job
                 break;
             }
         }
@@ -377,9 +383,11 @@ class PickUp: public ActionNode
         {
             semaphore.wait();
             setNodeState(NodeState::RUNNING);
-            std::cout<<"Picking up the object";
+            std::cout<<"Picking up the object in 3 seconds\n";
             std::this_thread::sleep_for(std::chrono::seconds(3));
-            setNodeState(NodeState::SUCCESS);
+            // setNodeState(NodeState::SUCCESS); // don't use this because you are gonna freeze at the end of the program
+            WriteState(NodeState::SUCCESS);
+            semaphore.wait(); // waiting for our father to see our success
         }
     protected:
         std::string objectToPick;
@@ -390,19 +398,20 @@ int main()
 {
     std::unique_ptr<SequenceNode> root = std::make_unique<SequenceNode>("Seq1");
     std::unique_ptr<MoveTo> action1 = std::make_unique<MoveTo>("Move to position (0.5,0.5)",std::vector<double>{5,5});
-    // std::unique_ptr<PickUp> action2 = std::make_unique<PickUp>("Pick up Orange","Orange");
+    std::unique_ptr<PickUp> action2 = std::make_unique<PickUp>("Pick up Orange","Orange");
 
     root->AddChild(action1.get());
-    // root->AddChild(action2.get());
+    root->AddChild(action2.get());
 
 
     while(true)
     {
         root->semaphore.notify();
         NodeState rootState = root->getNodeState(); 
-        std::cout<<"Root State is : "<<static_cast<int>(rootState)<<"\n";
+        std::cout<<"Root(sequence) State is : "<<node_state_text[static_cast<int>(rootState)]<<"\n";
         if(rootState==NodeState::SUCCESS)
         {
+            action2->thread.join();
             action1->thread.join();
             root->thread.join();
             break;
