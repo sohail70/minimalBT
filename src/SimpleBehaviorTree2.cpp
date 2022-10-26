@@ -7,7 +7,12 @@
 #include<memory>
 #include<cmath>
 // TODO: Implement halt 
-// https://stackoverflow.com/questions/13983984/what-happens-when-calling-the-destructor-of-a-thread-object-that-has-a-condition
+
+/* 
+    Few Notes on join thread
+    https://stackoverflow.com/questions/13983984/what-happens-when-calling-the-destructor-of-a-thread-object-that-has-a-condition
+    https://leimao.github.io/blog/CPP-Ensure-Join-Detach-Before-Thread-Destruction/
+*/
 
 class Semaphore{
     public:
@@ -397,9 +402,11 @@ int main()
         NodeState rootState = root->getNodeState(); 
         std::cout<<"Root State is : "<<static_cast<int>(rootState)<<"\n";
         if(rootState==NodeState::SUCCESS)
-            {
-                break;
-            }
+        {
+            action1->thread.join();
+            root->thread.join();
+            break;
+        }
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 }
