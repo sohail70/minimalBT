@@ -271,7 +271,7 @@ class SequenceNode: public ControlNode
                         }
                         else
                         {
-                            std::cout<<"Seq: Child "<<i<<" was successful, ticking the next child if there is any"<<"\n"; // But its too soon to announce that the sequences is a success because there maybe other childs to be processed
+                            std::cout<<"Seq: Child "<<childNodes[i]->name<<" was successful, ticking the next child if there is any"<<"\n"; // But its too soon to announce that the sequences is a success because there maybe other childs to be processed
                             i++;
                         }
 
