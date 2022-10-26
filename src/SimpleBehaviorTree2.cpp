@@ -1,3 +1,5 @@
+// Minimal Implementation of a simple sequence node and its two children
+
 #include<iostream>
 #include<mutex>
 #include<condition_variable>
